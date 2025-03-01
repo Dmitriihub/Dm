@@ -1,0 +1,15 @@
+2025-02-28 14:52:15.013 KST [88243] LOG:  starting PostgreSQL 14.15 (Homebrew) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 16.0.0 (clang-1600.0.26.4), 64-bit
+2025-02-28 14:52:15.020 KST [88243] LOG:  listening on IPv6 address "::1", port 5432
+2025-02-28 14:52:15.020 KST [88243] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2025-02-28 14:52:15.022 KST [88243] LOG:  listening on Unix socket "/tmp/.s.PGSQL.5432"
+2025-02-28 14:52:15.030 KST [88244] LOG:  database system was shut down at 2025-02-28 14:51:53 KST
+2025-02-28 14:52:15.032 KST [88243] LOG:  database system is ready to accept connections
+2025-02-28 14:52:31.060 KST [88268] FATAL:  database "tasks" does not exist
+2025-02-28 14:52:49.764 KST [88286] FATAL:  database "dmitrijelagin" does not exist
+2025-02-28 14:53:07.165 KST [88309] FATAL:  role "postgres" does not exist
+2025-02-28 14:53:33.834 KST [88330] FATAL:  database "dmitrijelagin" does not exist
+2025-02-28 14:53:59.049 KST [88243] LOG:  received fast shutdown request
+2025-02-28 14:53:59.049 KST [88243] LOG:  aborting any active transactions
+2025-02-28 14:53:59.051 KST [88243] LOG:  background worker "logical replication launcher" (PID 88250) exited with exit code 1
+2025-02-28 14:53:59.051 KST [88245] LOG:  shutting down
+2025-02-28 14:53:59.057 KST [88243] LOG:  database system is shut down
