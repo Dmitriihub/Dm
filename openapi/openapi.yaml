@@ -205,6 +205,8 @@ components:
           type: string
         password:
           type: string
+        name:
+          type: string  # Добавлено поле name
         deleted_at:
           type: string
           format: date-time

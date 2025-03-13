@@ -21,6 +21,7 @@ type User struct {
 	Email     *string    `json:"email,omitempty"`
 	Id        *int       `json:"id,omitempty"`
 	Password  *string    `json:"password,omitempty"`
+	Name      *string    `json:"name"`
 }
 
 // PostUsersJSONRequestBody defines body for PostUsers for application/json ContentType.
