@@ -8,31 +8,47 @@ import (
 	"gorm.io/gorm"
 )
 
-type Task struct {
-	ID     int    `json:"id"`
-	Task   string `json:"task"`
-	IsDone bool   `json:"is_done"`
+// User представляет модель пользователя
+type User struct {
+	ID       uint   `gorm:"primaryKey"`
+	Name     string `gorm:"not null"`
+	Email    string `gorm:"not null;unique"`
+	Password string `gorm:"not null"`
 }
 
-// переменная, через которую мы будем работать с БД
+// Task представляет модель задачи
+type Task struct {
+	ID     uint   `gorm:"primaryKey"`
+	Task   string `gorm:"not null"`
+	IsDone bool   `gorm:"default:false"`
+	UserID uint   `gorm:"not null"` // Связь с пользователем
+}
+
+// DB — глобальная переменная для работы с базой данных
 var DB *gorm.DB
 
+// InitDB инициализирует подключение к базе данных и выполняет миграции
 func InitDB() {
-	// в dsn вводим данные, которые мы указали при создании контейнера
-	dsn := "host=localhost user=dmitrijelagin password=1234 dbname=tasks port=5432 sslmode=disable"
+	// Настройки подключения к базе данных
+	dsn := "host=localhost user=youruser password=yourpassword dbname=yourdb port=5432 sslmode=disable"
 	var err error
+
+	// Подключение к базе данных
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
 
-	err = DB.AutoMigrate(&Task{})
+	// Автоматическое создание таблиц
+	err = DB.AutoMigrate(&User{}, &Task{})
 	if err != nil {
 		log.Fatal("Migration failed: ", err)
 	}
+
 	fmt.Println("Database migrated successfully")
 }
 
+// GetDB возвращает подключение к базе данных
 func GetDB() *gorm.DB {
 	if DB == nil {
 		log.Fatal("Ошибка: БД не инициализирована. Вызови InitDB() перед использованием.")

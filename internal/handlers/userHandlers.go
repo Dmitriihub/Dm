@@ -1,116 +1,111 @@
 package handlers
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"newproject/internal/models"
 	"newproject/internal/userService"
-	"newproject/internal/web/users"
+	"strconv"
+
+	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
 )
 
 type UserHandler struct {
-	Service *userService.UserService
+	userService *userService.UserService
 }
 
-// DeleteUsersId implements users.StrictServerInterface.
-func (h *UserHandler) DeleteUsersId(ctx context.Context, request users.DeleteUsersIdRequestObject) (users.DeleteUsersIdResponseObject, error) {
-	id := request.Id
+type UpdateUserRequest struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
 
-	err := h.Service.DeleteUserByID(uint(id))
+func NewUserHandler(userService *userService.UserService) *UserHandler {
+	return &UserHandler{
+		userService: userService,
+	}
+}
+
+func (h *UserHandler) GetUsers(ctx echo.Context) error {
+	users, err := h.userService.GetAllUsers()
 	if err != nil {
-		fmt.Println("Ошибка удаления пользователя:", err)
-		return nil, fmt.Errorf("не удалось удалить пользователя с id %d: %w", id, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Error fetching users: %s", err))
 	}
 
-	return users.DeleteUsersId204Response{}, nil
+	return ctx.JSON(http.StatusOK, users)
 }
 
-// PatchUsersId implements users.StrictServerInterface.
-func (h *UserHandler) PatchUsersId(ctx context.Context, request users.PatchUsersIdRequestObject) (users.PatchUsersIdResponseObject, error) {
-	id := request.Id
-	userRequest := request.Body
-
-	// Проверяем, что Email и Password не равны nil
-	if userRequest.Email == nil && userRequest.Name == nil && userRequest.Password == nil {
-		return nil, fmt.Errorf("email, name, and password must be provided at least one field to update")
+func (h *UserHandler) PostUsers(ctx echo.Context) error {
+	var request models.User
+	if err := ctx.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid input: %s", err))
 	}
 
-	// Формируем объект для обновления
-	userToUpdate := userService.User{
-		Email:    *userRequest.Email,
-		Password: *userRequest.Password,
-		Name:     *userRequest.Name, // Учитываем поле Name
-	}
-
-	// Вызов метода сервиса для обновления пользователя
-	updatedUser, err := h.Service.UpdateUserByID(id, userToUpdate)
+	user, err := h.userService.CreateUser(request)
 	if err != nil {
-		return nil, fmt.Errorf("error updating user: %w", err)
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Error creating user: %s", err))
 	}
 
-	// Формируем ответ
-	response := users.PatchUsersId200JSONResponse{
-		Id:       ptr(int(updatedUser.ID)),
-		Email:    ptr(updatedUser.Email),
-		Password: ptr(updatedUser.Password),
-		Name:     ptr(updatedUser.Name), // Возвращаем Name
-	}
-
-	return response, nil
+	return ctx.JSON(http.StatusCreated, user)
 }
 
-func NewUserHandler(service *userService.UserService) *UserHandler {
-	return &UserHandler{Service: service}
-}
-
-func (h *UserHandler) GetUsers(ctx context.Context, _ users.GetUsersRequestObject) (users.GetUsersResponseObject, error) {
-	allUsers, err := h.Service.GetAllUsers()
+func (h *UserHandler) DeleteUsersId(ctx echo.Context) error {
+	idStr := ctx.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		return nil, err
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
 	}
 
-	response := users.GetUsers200JSONResponse{}
-	for _, usr := range allUsers {
-		user := users.User{
-			Id:       ptr(int(usr.ID)),
-			Email:    ptr(usr.Email),
-			Password: ptr(usr.Password),
-			Name:     ptr(usr.Name), // Добавляем Name в ответ
-		}
-		response = append(response, user)
+	err = h.userService.DeleteUserByID(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
+	} else if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Error deleting user: %s", err))
 	}
 
-	return response, nil
+	return ctx.NoContent(http.StatusNoContent)
 }
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
-func (h *UserHandler) PostUsers(ctx context.Context, request users.PostUsersRequestObject) (users.PostUsersResponseObject, error) {
-	userRequest := request.Body
-
-	// Проверяем, что Email и Password не равны nil
-	if userRequest.Email == nil || userRequest.Password == nil || userRequest.Name == nil {
-		return nil, fmt.Errorf("email, name, and password must be provided")
-	}
-
-	newUser := userService.User{
-		Email:    *userRequest.Email,
-		Password: *userRequest.Password,
-		Name:     *userRequest.Name, // Передаем Name при создании
-	}
-
-	createdUser, err := h.Service.CreateUser(newUser)
+func (h *UserHandler) PatchUsersId(ctx echo.Context) error {
+	idStr := ctx.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("error creating user: %w", err)
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
 	}
 
-	response := users.PostUsers201JSONResponse{
-		Id:       ptr(int(createdUser.ID)),
-		Email:    ptr(createdUser.Email),
-		Password: ptr(createdUser.Password),
-		Name:     ptr(createdUser.Name), // Возвращаем Name в ответе
+	var request UpdateUserRequest
+	if err := ctx.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid input: %s", err))
 	}
 
-	return response, nil
+	updatedUser, err := h.userService.UpdateUserByID(uint(id), models.User{
+		ID:    uint(id),
+		Name:  request.Name,
+		Email: request.Email,
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
+	} else if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Error updating user: %s", err))
+	}
+
+	return ctx.JSON(http.StatusOK, updatedUser)
+}
+
+func (h *UserHandler) GetUsersIdTasks(ctx echo.Context) error {
+	idStr := ctx.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
+	}
+
+	tasks, err := h.userService.GetUserTasks(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
+	} else if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Error fetching tasks for user: %s", err))
+	}
+
+	return ctx.JSON(http.StatusOK, tasks)
 }

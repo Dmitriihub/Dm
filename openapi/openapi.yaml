@@ -2,12 +2,21 @@ openapi: 3.0.0
 info:
   title: API
   version: 1.0.0
+
 paths:
-  /tasks:
+  /users/{user_id}/tasks:
     get:
-      summary: Get all tasks
+      summary: Get all tasks for a user
       tags:
-        - tasks
+        - users
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: The ID of the user
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: A list of tasks
@@ -17,164 +26,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Task'
-    post:
-      summary: Create a new task
-      tags:
-        - tasks
-      requestBody:
-        description: The task to create
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Task'
-      responses:
-        '201':
-          description: The created task
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Task'
-
-  /tasks/{id}:
-    patch:
-      summary: Update a task by ID
-      tags:
-        - tasks
-      parameters:
-        - in: path
-          name: id
-          required: true
-          description: The ID of the task to update
-          schema:
-            type: integer
-            format: int64
-      requestBody:
-        description: The task data to update
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Task'
-      responses:
-        '200':
-          description: The updated task
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Task'
-        '400':
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
         '404':
-          description: Task not found
+          description: User not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-    delete:
-      summary: Delete a task by ID
-      tags:
-        - tasks
-      parameters:
-        - in: path
-          name: id
-          required: true
-          description: The ID of the task to delete
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '204':
-          description: Task successfully deleted
-        '400':
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: Task not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /users:
-    get:
-      summary: Get all users
-      tags:
-        - users
-      responses:
-        '200':
-          description: A list of users
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-
-    post:
-      summary: Create a new user
-      tags:
-        - users
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '201':
-          description: User created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-
-  /users/{id}:
-    patch:
-      summary: Update user by ID
-      tags:
-        - users
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '200':
-          description: Updated user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-
-    delete:
-      summary: Delete user by ID
-      tags:
-        - users
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-      responses:
-        '204':
-          description: User deleted
 
 components:
   schemas:
@@ -188,25 +45,12 @@ components:
           type: string
         is_done:
           type: boolean
+        user_id:
+          type: integer
+          format: int64
 
     Error:
       type: object
       properties:
         message:
           type: string
-
-    User:
-      type: object
-      properties:
-        id:
-          type: integer
-          format: int64
-        email:
-          type: string
-        password:
-          type: string
-        name:
-          type: string  # Добавлено поле name
-        deleted_at:
-          type: string
-          format: date-time

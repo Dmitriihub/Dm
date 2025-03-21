@@ -19,3 +19,5 @@ CREATE TRIGGER update_users_updated_at
 BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION update_users_updated_at();
+
+ALTER TABLE users ADD COLUMN name text NOT NULL DEFAULT '';

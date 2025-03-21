@@ -2,196 +2,216 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
-
+	"log"
+	"newproject/internal/models"
 	"newproject/internal/taskService"
-	"newproject/internal/web/tasks"
-	// Импортируем наш сервис
+	"newproject/internal/userService"
+	openapi "newproject/internal/web/tasks"
+
+	"gorm.io/gorm"
 )
 
-type Handler struct {
-	Service *taskService.TaskService
+type TaskHandler struct {
+	taskService *taskService.TaskService
+	userService *userService.UserService
 }
 
-// DeleteTasksId implements tasks.StrictServerInterface.
-func (h *Handler) DeleteTasksId(ctx context.Context, request tasks.DeleteTasksIdRequestObject) (tasks.DeleteTasksIdResponseObject, error) {
-	id := request.Id // Извлекаем ID из запроса
-
-	// Удаляем задачу через сервис
-	err := h.Service.DeleteTaskByID(uint(id))
-	if err != nil {
-		return nil, fmt.Errorf("не удалось найти задачу с id %d: %w", id, err)
+func NewTaskHandler(taskService *taskService.TaskService, userService *userService.UserService) *TaskHandler {
+	return &TaskHandler{
+		taskService: taskService,
+		userService: userService,
 	}
-
-	return tasks.DeleteTasksId204Response{}, nil // Возвращаем успешный ответ
 }
 
-// PatchTasksId implements tasks.StrictServerInterface.
-func (h *Handler) PatchTasksId(ctx context.Context, request tasks.PatchTasksIdRequestObject) (tasks.PatchTasksIdResponseObject, error) {
-	id := request.Id            // Извлекаем ID из запроса
-	taskRequest := request.Body // Получаем тело запроса
-
-	taskToUpdate := taskService.Task{
-		Task:   taskRequest.Task,
-		IsDone: taskRequest.IsDone,
+// GetUsers возвращает всех пользователей
+func (h *TaskHandler) GetUsers(ctx context.Context) ([]openapi.User, error) {
+	// Проверяем, что userService инициализирован
+	if h.userService == nil {
+		log.Println("userService is nil")
+		return nil, fmt.Errorf("user service is not initialized")
 	}
 
-	updatedTask, err := h.Service.UpdateTaskByID(uint(id), taskToUpdate)
+	// Получаем всех пользователей через userService
+	users, err := h.userService.GetAllUsers()
 	if err != nil {
-		return nil, fmt.Errorf("не удалось найти задачу с id %d: %w", id, err)
+		log.Printf("Error fetching users: %v", err)
+		return nil, fmt.Errorf("error fetching users: %w", err)
 	}
 
-	response := tasks.PatchTasksId200JSONResponse{
-		Id:     int64(updatedTask.ID),
-		Task:   updatedTask.Task,
-		IsDone: updatedTask.IsDone,
+	// Преобразуем []models.User в []openapi.User
+	var response []openapi.User
+	for _, u := range users {
+		response = append(response, openapi.User{
+			Id:       int64Ptr(int64(u.ID)),
+			Username: stringPtr(u.Name),
+			Email:    stringPtr(u.Email),
+		})
 	}
 
 	return response, nil
 }
 
-// GetTasks implements tasks.StrictServerInterface.
-func (h *Handler) GetTasks(ctx context.Context, request tasks.GetTasksRequestObject) (tasks.GetTasksResponseObject, error) {
-	allTasks, err := h.Service.GetAllTasks()
-	if err != nil {
-		return nil, err
+// PostUsers создает нового пользователя
+func (h *TaskHandler) PostUsers(ctx context.Context, req openapi.NewUserRequest) (openapi.User, error) {
+	if h.userService == nil {
+		return openapi.User{}, fmt.Errorf("user service is not initialized")
 	}
 
-	response := tasks.GetTasks200JSONResponse{}
-	for _, tsk := range allTasks {
-		task := tasks.Task{
-			Id:     int64(tsk.ID),
-			Task:   tsk.Task,
-			IsDone: tsk.IsDone,
-		}
-		response = append(response, task)
+	if req.Username == nil || req.Email == nil || req.Password == nil {
+		return openapi.User{}, fmt.Errorf("username, email, and password are required")
+	}
+
+	user := models.User{
+		Name:     *req.Username,
+		Email:    *req.Email,
+		Password: *req.Password,
+	}
+
+	createdUser, err := h.userService.CreateUser(user)
+	if err != nil {
+		log.Printf("Error creating user: %v", err)
+		return openapi.User{}, fmt.Errorf("error creating user: %w", err)
+	}
+
+	return openapi.User{
+		Id:       int64Ptr(int64(createdUser.ID)),
+		Username: stringPtr(createdUser.Name),
+		Email:    stringPtr(createdUser.Email),
+	}, nil
+}
+
+// GetTasks возвращает все задачи
+func (h *TaskHandler) GetTasks(ctx context.Context) ([]openapi.Task, error) {
+	if h.taskService == nil {
+		return nil, fmt.Errorf("task service is not initialized")
+	}
+
+	taskList, err := h.taskService.GetAllTasks()
+	if err != nil {
+		log.Printf("Error fetching tasks: %v", err)
+		return nil, fmt.Errorf("error fetching tasks: %w", err)
+	}
+
+	var response []openapi.Task
+	for _, t := range taskList {
+		response = append(response, openapi.Task{
+			Id:     int64Ptr(int64(t.ID)),
+			IsDone: boolPtr(t.IsDone),
+			Task:   stringPtr(t.Task),
+			UserId: int64Ptr(int64(t.UserID)),
+		})
 	}
 
 	return response, nil
 }
 
-// PostTasks implements tasks.StrictServerInterface.
-func (h *Handler) PostTasks(ctx context.Context, request tasks.PostTasksRequestObject) (tasks.PostTasksResponseObject, error) {
-	// Логируем тело запроса
-	fmt.Printf("Request body: %+v\n", request.Body)
-
-	// Проверяем, что поля Task и IsDone не пустые
-	if request.Body.Task == "" || request.Body.IsDone {
-		return nil, fmt.Errorf("task and isDone fields are required")
+// GetTasksByUserID возвращает задачи пользователя по user_id
+func (h *TaskHandler) GetTasksByUserID(ctx context.Context, userID int64) ([]openapi.Task, error) {
+	if h.taskService == nil {
+		return nil, fmt.Errorf("task service is not initialized")
 	}
 
-	// Создаем задачу для создания
-	taskToCreate := taskService.Task{
-		Task:   request.Body.Task,   // Здесь мы уже работаем с обычным значением, не указателем
-		IsDone: request.Body.IsDone, // Убедимся, что IsDone не nil
-	}
-
-	// Создаем задачу через сервис
-	createdTask, err := h.Service.CreateTask(taskToCreate)
+	tasks, err := h.taskService.GetTasksByUserID(uint(userID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
+		log.Printf("Error fetching tasks for user: %v", err)
+		return nil, fmt.Errorf("error fetching tasks for user: %w", err)
 	}
 
-	// Создаем ответ
-	response := tasks.PostTasks201JSONResponse{
-		Id:     int64(createdTask.ID), // Используем int, так как в структуре PostTasksResponseObject должно быть поле типа int
-		Task:   createdTask.Task,
-		IsDone: createdTask.IsDone,
+	var response []openapi.Task
+	for _, t := range tasks {
+		response = append(response, openapi.Task{
+			Id:     int64Ptr(int64(t.ID)),
+			IsDone: boolPtr(t.IsDone),
+			Task:   stringPtr(t.Task),
+			UserId: int64Ptr(int64(t.UserID)),
+		})
 	}
 
 	return response, nil
 }
 
-// Нужна для создания структуры Handler на этапе инициализации приложения
-
-func NewHandler(service *taskService.TaskService) *Handler {
-	return &Handler{
-		Service: service,
+// PostTasks создает новую задачу
+func (h *TaskHandler) PostTasks(ctx context.Context, req openapi.NewTaskRequest) (openapi.Task, error) {
+	if h.taskService == nil {
+		return openapi.Task{}, fmt.Errorf("task service is not initialized")
 	}
-}
 
-func (h *Handler) GetTask(_ context.Context, _ tasks.GetTasksRequestObject) (tasks.GetTasksResponseObject, error) {
-	// Получение всех задач из сервиса
-	allTasks, err := h.Service.GetAllTasks()
+	if req.Task == nil || req.IsDone == nil || req.UserId == nil {
+		return openapi.Task{}, fmt.Errorf("task, isDone, and userId are required")
+	}
+
+	task := taskService.Task{
+		Task:   *req.Task,
+		IsDone: *req.IsDone,
+		UserID: uint(*req.UserId),
+	}
+
+	createdTask, err := h.taskService.CreateTask(task)
 	if err != nil {
-		return nil, err
+		log.Printf("Error creating task: %v", err)
+		return openapi.Task{}, fmt.Errorf("error creating task: %w", err)
 	}
 
-	// Создаем переменную респон типа 200джейсонРеспонс
-	// Которую мы потом передадим в качестве ответа
-	response := tasks.GetTasks200JSONResponse{}
-
-	// Заполняем слайс response всеми задачами из БД
-	for _, tsk := range allTasks {
-		task := tasks.Task{
-			Id:     int64(tsk.ID),
-			Task:   tsk.Task,
-			IsDone: tsk.IsDone,
-		}
-		response = append(response, task)
-	}
-
-	// САМОЕ ПРЕКРАСНОЕ. Возвращаем просто респонс и nil!
-	return response, nil
+	return openapi.Task{
+		Id:     int64Ptr(int64(createdTask.ID)),
+		Task:   stringPtr(createdTask.Task),
+		IsDone: boolPtr(createdTask.IsDone),
+		UserId: int64Ptr(int64(createdTask.UserID)),
+	}, nil
 }
 
-func (h *Handler) PostTask(_ context.Context, request tasks.PostTasksRequestObject) (tasks.PostTasksResponseObject, error) {
-	// Распаковываем тело запроса напрямую, без декодера!
-	taskRequest := request.Body
-	// Обращаемся к сервису и создаем задачу
-	taskToCreate := taskService.Task{
-		Task:   taskRequest.Task,
-		IsDone: taskRequest.IsDone,
+// DeleteTasksId удаляет задачу по ID
+func (h *TaskHandler) DeleteTasksId(ctx context.Context, id int64) error {
+	if h.taskService == nil {
+		return fmt.Errorf("task service is not initialized")
 	}
-	createdTask, err := h.Service.CreateTask(taskToCreate)
 
-	if err != nil {
-		return nil, err
+	err := h.taskService.DeleteTaskByID(uint(id))
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("task not found")
+	} else if err != nil {
+		return fmt.Errorf("error deleting task: %w", err)
 	}
-	// создаем структуру респонс
-	response := tasks.PostTasks201JSONResponse{
-		Id:     int64(createdTask.ID),
-		Task:   createdTask.Task,
-		IsDone: createdTask.IsDone,
-	}
-	// Просто возвращаем респонс!
-	return response, nil
+
+	return nil
 }
 
-func (h *Handler) PatchTaskId(ctx context.Context, request tasks.PatchTasksIdRequestObject) (tasks.PatchTasksIdResponseObject, error) {
-	id := request.Id            // Извлекаем ID из запроса
-	taskRequest := request.Body // Получаем тело запроса
-
-	taskToUpdate := taskService.Task{
-		Task:   taskRequest.Task,
-		IsDone: taskRequest.IsDone,
+// PatchTasksId обновляет задачу по ID
+func (h *TaskHandler) PatchTasksId(ctx context.Context, id int64, req openapi.PatchTasksIdJSONRequestBody) (openapi.Task, error) {
+	// Проверяем, что taskService инициализирован
+	if h.taskService == nil {
+		log.Println("taskService is nil")
+		return openapi.Task{}, fmt.Errorf("task service is not initialized")
 	}
 
-	// Здесь нужно привести id к int64
-	updatedTask, err := h.Service.UpdateTaskByID(uint(id), taskToUpdate)
-	if err != nil {
-		return nil, fmt.Errorf("не удалось найти задачу с id %d: %w", id, err)
+	log.Printf("Updating task with ID %d: task=%v, isDone=%v, userId=%v", id, req.Task, req.IsDone, req.UserId)
+
+	// Обновляем задачу
+	updatedTask, err := h.taskService.UpdateTaskByID(uint(id), taskService.Task{
+		Task:   req.Task,
+		IsDone: req.IsDone,
+		UserID: uint(req.UserId),
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Printf("Task with ID %d not found", id)
+		return openapi.Task{}, fmt.Errorf("task not found")
+	} else if err != nil {
+		log.Printf("Error updating task: %v", err)
+		return openapi.Task{}, fmt.Errorf("error updating task: %w", err)
 	}
 
-	response := tasks.PatchTasksId200JSONResponse{
-		Id:     int64(updatedTask.ID), // Обратите внимание, что здесь `updatedTask.ID` теперь должен быть int64
-		Task:   updatedTask.Task,
-		IsDone: updatedTask.IsDone,
-	}
+	log.Printf("Task with ID %d updated successfully: %+v", id, updatedTask)
 
-	return response, nil
+	return openapi.Task{
+		Id:     int64Ptr(int64(updatedTask.ID)),
+		Task:   stringPtr(updatedTask.Task),
+		IsDone: boolPtr(updatedTask.IsDone),
+		UserId: int64Ptr(int64(updatedTask.UserID)),
+	}, nil
 }
 
-func (h *Handler) DeleteTaskId(ctx context.Context, request tasks.DeleteTasksIdRequestObject) (tasks.DeleteTasksIdResponseObject, error) {
-	// Извлекаем ID из запроса
-	id := request.Id
-
-	// Удаляем задачу через сервис
-	err := h.Service.DeleteTaskByID(uint(id))
-	if err != nil {
-		return nil, fmt.Errorf("не удалось найти задачу с id %d: %w", id, err)
-	}
-
-	// Возвращаем успешный ответ
-	return tasks.DeleteTasksId204Response{}, nil
-}
+func int64Ptr(i int64) *int64    { return &i }
+func boolPtr(b bool) *bool       { return &b }
+func stringPtr(s string) *string { return &s }
